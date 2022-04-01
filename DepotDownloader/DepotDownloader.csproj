@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>Library</OutputType>
     <TargetFramework>net6.0</TargetFramework>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <RollForward>LatestMajor</RollForward>
@@ -13,5 +13,9 @@
   <ItemGroup>
     <PackageReference Include="protobuf-net" Version="3.0.101" />
     <PackageReference Include="SteamKit2" Version="2.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Common\Common.csproj" />
   </ItemGroup>
 </Project>
