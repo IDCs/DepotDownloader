@@ -14,15 +14,23 @@ using Common;
 
 namespace DepotDownloader
 {
+  public class InvalidCredentialsException : Exception
+  {
+    public InvalidCredentialsException() : base() { }
+  }
+
   public static class Exec
   {
     private static CoreDelegates _instance;
     public static CoreDelegates Instance { get { return _instance; } }
 
-    public static int _steamInitRetries = 0;
+    public static IParameters Parameters = null;
+
+    //public static int _steamInitRetries = 0;
     public static async Task<Dictionary<string, object>> VerifyFileIntegrity(IParameters parameters,
                                                                              CoreDelegates core)
     {
+      Parameters = parameters;
       if (core != null && _instance == null)
       {
         _instance = core;
@@ -106,9 +114,16 @@ namespace DepotDownloader
       var ugcId = parameters?.UgcId ?? ContentDownloader.INVALID_MANIFEST_ID;
       if (pubFile != ContentDownloader.INVALID_MANIFEST_ID)
       {
+        string[] creds = new string[] { username, password };
+        if (ContentDownloader._logonDetails?.Password == null)
+        {
+          creds = await core.ui.RequestCredentials();
+          ContentDownloader._logonDetails.Username = creds[0];
+          ContentDownloader._logonDetails.Password = creds[1];
+        }
         #region Pubfile Downloading
 
-        if (await InitializeSteam(username, password, core))
+        if (await InitializeSteam(creds[0], creds[1], core))
         {
           try
           {
@@ -127,11 +142,11 @@ namespace DepotDownloader
           }
           catch (Exception e)
           {
+            core.ui.ReportError("Error", "Failed to download content", e.Message);
             return new Dictionary<string, object>
             {
                 { "message", e.Message },
             };
-            throw;
           }
           finally
           {
@@ -140,19 +155,25 @@ namespace DepotDownloader
         }
         else
         {
-          return new Dictionary<string, object>
-          {
-              { "message", "Error: InitializeSteam failed" },
-          };
+          ContentDownloader._logonDetails = null;
+          username = null;
+          password = null;
+          throw new InvalidCredentialsException();
         }
 
         #endregion
       }
       else if (ugcId != ContentDownloader.INVALID_MANIFEST_ID)
       {
+        string[] creds = new string[] { username, password };
+        if (ContentDownloader._logonDetails?.Password == null)
+        {
+          creds = await core.ui.RequestCredentials();
+          ContentDownloader._logonDetails.Username = creds[0];
+          ContentDownloader._logonDetails.Password = creds[1];
+        }
         #region UGC Downloading
-
-        if (await InitializeSteam(username, password, core))
+        if (await InitializeSteam(creds[0], creds[1], core))
         {
           try
           {
@@ -164,7 +185,7 @@ namespace DepotDownloader
           {
             return new Dictionary<string, object>
             {
-                { "message", ex.Message },
+                { "error", ex.Message },
             };
           }
           catch (Exception e)
@@ -199,9 +220,19 @@ namespace DepotDownloader
 
         var depotManifestIds = new List<(uint, ulong)>();
         var isUGC = false;
-
-        var depotIdList = parameters?.DepotIdList ?? new List<uint>();
-        
+        List<uint> installeddepotIds = new List<uint>();
+        if (parameters?.DepotIdList == null)
+        {
+          try
+          {
+            installeddepotIds = await core.context.GetDepotIds();
+          }
+          catch (Exception ex)
+          {
+            // nop
+          }
+        }
+        var depotIdList = parameters?.DepotIdList ?? installeddepotIds;
         var manifestIdList = parameters?.ManifestIdList ?? new List<ulong>();
         if (manifestIdList.Count > 0)
         {
@@ -229,7 +260,7 @@ namespace DepotDownloader
         }
         finally
         {
-          ContentDownloader.ShutdownSteam3();
+          //ContentDownloader.ShutdownSteam3();
         }
 
         #endregion
@@ -261,7 +292,8 @@ namespace DepotDownloader
         catch (Exception ex) when (
             ex is ContentDownloaderAccountException)
         {
-          string[] creds = await core.ui.RequestCredentials();
+          bool retry = ContentDownloader._logonDetails?.Password != null;
+          string[] creds = await core.ui.RequestCredentials(retry);
           if (ContentDownloader._logonDetails != null)
           {
             ContentDownloader._logonDetails.Username = creds[0];
@@ -279,30 +311,26 @@ namespace DepotDownloader
         catch (Exception e)
         {
           Console.WriteLine("Download failed to due to an unhandled exception: {0}", e.Message);
-          return new Dictionary<string, object>
-          {
-              { "message", e.Message },
-          };
           throw;
         }
       }
       else
       {
-        if (_steamInitRetries > 2)
-        {
-          Console.WriteLine("Error: InitializeSteam failed");
-          return new Dictionary<string, object>
-          {
-              { "message", "Error: InitializeSteam failed" },
-          };
-        }
-        _steamInitRetries++;
-        await Task.Delay(Defaults.USER_INPUT_TIMEOUT_MS / 4);
-        try {
-          await DownloadAppAsync(username, password, appId, depotManifestIds, branch, isUGC, core);
-        } catch (Exception)
-        {
-        }
+        //if (_steamInitRetries > 2)
+        //{
+        //  Console.WriteLine("Error: InitializeSteam failed");
+        //  return new Dictionary<string, object>
+        //  {
+        //    { "error", "Error: InitializeSteam failed" },
+        //  };
+        //}
+        //_steamInitRetries++;
+        //await Task.Delay(Defaults.USER_INPUT_TIMEOUT_MS);
+        //try {
+        //  await DownloadAppAsync(username, password, appId, depotManifestIds, branch, isUGC, core);
+        //} catch (Exception)
+        //{
+        //}
       }
 
       return new Dictionary<string, object>
@@ -316,7 +344,7 @@ namespace DepotDownloader
       if (ContentDownloader._logonDetails != null)
       {
         ContentDownloader.Config.SuppliedPassword = password;
-        return ContentDownloader.InitializeSteam3(ContentDownloader._logonDetails.Username, ContentDownloader._logonDetails.Password, core);
+        return await ContentDownloader.InitializeSteam3(ContentDownloader._logonDetails.Username, ContentDownloader._logonDetails.Password, core);
       }
       if (username != null && password == null && (!ContentDownloader.Config.RememberPassword || !AccountSettingsStore.Instance.LoginKeys.ContainsKey(ContentDownloader._logonDetails.Username)))
       {
@@ -332,7 +360,7 @@ namespace DepotDownloader
       // capture the supplied password in case we need to re-use it after checking the login key
       ContentDownloader.Config.SuppliedPassword = password;
 
-      return ContentDownloader.InitializeSteam3(username, password, core);
+      return await ContentDownloader.InitializeSteam3(username, password, core);
     }
   }
 }

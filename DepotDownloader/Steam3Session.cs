@@ -19,6 +19,7 @@ namespace DepotDownloader
     public class Credentials
     {
       public bool LoggedOn { get; set; }
+      public bool WaitingForAdditionalAuth { get; set; }
       public ulong SessionToken { get; set; }
 
       public bool IsValid
@@ -47,6 +48,7 @@ namespace DepotDownloader
     readonly SteamApps steamApps;
     readonly SteamCloud steamCloud;
     readonly SteamUnifiedMessages.UnifiedService<IPublishedFile> steamPublishedFile;
+    readonly List<EResult> eInvalidAuthCode = new List<EResult>() { EResult.ExpiredLoginAuthCode, EResult.InvalidLoginAuthCode };
 
     readonly CallbackManager callbacks;
 
@@ -553,12 +555,22 @@ namespace DepotDownloader
         {
           try
           {
-            ContentDownloader._logonDetails.TwoFactorCode = await core.ui.Request2FA();
+            if (!credentials.WaitingForAdditionalAuth)
+            {
+              credentials.WaitingForAdditionalAuth = true;
+              ContentDownloader._logonDetails.TwoFactorCode = await core.ui.Request2FA();
+              credentials.WaitingForAdditionalAuth = false;
+            }
           }
-          catch (Exception)
+          catch (Exception e)
           {
+            credentials.WaitingForAdditionalAuth = false;
             // User canceled
             Abort(true);
+            if (e.Message == "task timeout")
+            {
+              await core.ui.TimedOut(Exec.Parameters.OperationType);
+            }
             return;
           }
         }
@@ -586,12 +598,22 @@ namespace DepotDownloader
         {
           try
           {
-            ContentDownloader._logonDetails.AuthCode = await core.ui.RequestSteamGuard();
+            if (!credentials.WaitingForAdditionalAuth)
+            {
+              credentials.WaitingForAdditionalAuth = true;
+              ContentDownloader._logonDetails.AuthCode = await core.ui.RequestSteamGuard();
+              credentials.WaitingForAdditionalAuth = false;
+            }
           }
-          catch (Exception)
+          catch (Exception e)
           {
+            credentials.WaitingForAdditionalAuth = false;
             // User canceled
             Abort(true);
+            if (e.Message == "task timeout")
+            {
+              await core.ui.TimedOut(Exec.Parameters.OperationType);
+            }
             return;
           }
         }
@@ -615,6 +637,22 @@ namespace DepotDownloader
         Console.WriteLine("Unable to login to Steam3: {0}", loggedOn.Result);
         Abort(false);
 
+        return;
+      }
+
+      if (eInvalidAuthCode.Contains(loggedOn.Result))
+      {
+        credentials.WaitingForAdditionalAuth = true;
+        ContentDownloader._logonDetails.AuthCode = await core.ui.RequestSteamGuard();
+        credentials.WaitingForAdditionalAuth = false;
+        Reconnect();
+        return;
+      }
+
+      if (loggedOn.Result == EResult.RateLimitExceeded)
+      {
+        await core.ui.RateLimitExceeded();
+        Abort(true);
         return;
       }
 

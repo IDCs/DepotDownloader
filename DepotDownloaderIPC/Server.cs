@@ -420,7 +420,15 @@ namespace DepotDownloaderIPC
         var fileList = await coreDelegates.context.GetGameFileList();
         data["FileList"] = string.Join('\n', fileList);
       }
-      ParametersImpl parameters = new ParametersImpl(data);
+      ParametersImpl parameters = new ParametersImpl(data, OpType.file_verification);
+      return await Exec.VerifyFileIntegrity(parameters, coreDelegates);
+    }
+
+    private async Task<object> DispatchDownloadMod(string id, JObject data)
+    {
+      DeferContext context = new DeferContext(id, (targetId, targetType, name, args) => ContextIPC(targetId, targetType, name, args));
+      CoreDelegates coreDelegates = new CoreDelegates(ToExpando(context));
+      ParametersImpl parameters = new ParametersImpl(data, OpType.mod_download);
       return await Exec.VerifyFileIntegrity(parameters, coreDelegates);
     }
 
@@ -473,6 +481,7 @@ namespace DepotDownloaderIPC
       switch (command)
       {
         case "VerifyFiles": return await DispatchIntegrityVerification(id, data);
+        case "DownloadMod": return await DispatchDownloadMod(id, data);
         case "Invoke": return await DispatchInvoke(data);
         case "Reply":
           {

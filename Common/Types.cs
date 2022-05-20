@@ -1,7 +1,13 @@
 ﻿namespace Common
 {
+  public enum OpType {
+    file_verification,
+    mod_download,
+  }
+
   public interface IParameters
   {
+    public OpType OperationType { get; set; }
     public string Username { get; set; }
     public string Password { get; set; }
     public bool RememberPassword { get; }

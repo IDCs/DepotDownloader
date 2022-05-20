@@ -15,6 +15,7 @@ namespace Common
     private Func<object, Task<object>> mGetSteamId;
     private Func<object, Task<object>> mGetExistingDataFile;
     private Func<object, Task<object>> mGetGameExecutable;
+    private Func<object, Task<object>> mGetDepotIds;
     private Func<object[], Task<object>> mGetExistingDataFileList;
     private Func<object[], Task<object>> mGetGameFileList;
 
@@ -25,6 +26,7 @@ namespace Common
       mGetExistingDataFileList = source.getExistingDataFileList;
       mGetGameFileList = source.getGameFileList;
       mGetGameExecutable = source.getGameExecutable;
+      mGetDepotIds = source.getDepotIds;
     }
 
     public async Task<byte[]> GetExistingDataFile(string dataFile)
@@ -57,6 +59,12 @@ namespace Common
       object res = await Util.Timeout(mGetGameExecutable(new object()), Defaults.TIMEOUT_MS);
       return (string)res;
     }
+
+    public async Task<List<uint>> GetDepotIds()
+    {
+      object res = await Util.Timeout(mGetDepotIds(new object()), Defaults.TIMEOUT_MS);
+      return ((object[])res).Select(iter => Convert.ToUInt32(iter)).ToList();
+    }
   }
 
   #endregion
@@ -71,7 +79,10 @@ namespace Common
       private Func<object, Task<object>> mRequestSteamGuard;
       private Func<object, Task<object>> mRequest2FA;
       private Func<object, Task<object>> mRequestCredentials;
-      private Func<object, Task<object>> mReportMismatch;
+      private Func<object, Task<object>> mIsVerifyingFiles;
+      private Func<object, Task<object>> mTimedOut;
+      private Func<object, Task<object>> mRateLimitExceeded;
+      private Func<object[], Task<object>> mReportMismatch;
 
       public Delegates(dynamic source)
       {
@@ -80,11 +91,32 @@ namespace Common
         mRequestSteamGuard = source.requestSteamGuard;
         mRequest2FA = source.request2FA;
         mReportMismatch = source.reportMismatch;
+        mIsVerifyingFiles = source.isVerifyingFiles;
+        mTimedOut = source.timedOut;
+        mRateLimitExceeded = source.ratelimitExceeded;
+      }
+      
+      public async Task<bool> IsVerifyingFiles()
+      {
+        await mIsVerifyingFiles(null);
+        return true;
       }
 
-      public async Task<string[]> RequestCredentials()
+      public async Task<bool> RateLimitExceeded()
       {
-        object res = await Util.Timeout(mRequestCredentials(null), Defaults.USER_INPUT_TIMEOUT_MS);
+        await mRateLimitExceeded(null);
+        return true;
+      }
+
+      public async Task<bool> TimedOut(OpType op)
+      {
+        await mTimedOut((int)op);
+        return true;
+      }
+
+      public async Task<string[]> RequestCredentials(bool retry = false)
+      {
+        object res = await mRequestCredentials(retry);
         return ((object[])res).Select(iter => (string)iter).ToArray();
       }
 
@@ -116,10 +148,11 @@ namespace Common
         }
       }
 
-      public async Task<bool> ReportMismatch(string[] invalidFiles)
+      public async Task<string[]> ReportMismatch(string[] invalidFiles)
       {
-        object res = await Util.Timeout(mReportMismatch(invalidFiles), Defaults.USER_INPUT_TIMEOUT_MS);
-        return (bool)res;
+        object[] Params = new object[] { invalidFiles };
+        object res = await Util.Timeout(mReportMismatch(Params), Defaults.USER_INPUT_TIMEOUT_MS);
+        return ((object[])res).Select(iter => (string)iter).ToArray();
       }
     }
   }

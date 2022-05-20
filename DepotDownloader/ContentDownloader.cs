@@ -14,6 +14,7 @@ using Common;
 using static DepotDownloader.ProtoManifest;
 using System.Security.Cryptography;
 using System.Collections;
+using System.IO.Compression;
 
 namespace DepotDownloader
 {
@@ -41,6 +42,7 @@ namespace DepotDownloader
     public const uint INVALID_DEPOT_ID = uint.MaxValue;
     public const ulong INVALID_MANIFEST_ID = ulong.MaxValue;
     public const string DEFAULT_BRANCH = "Public";
+    public const string DEFAULT_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id={{ugcid}}";
 
     public static DownloadConfig Config = new DownloadConfig();
     public static SteamUser.LogOnDetails _logonDetails = null;
@@ -119,7 +121,7 @@ namespace DepotDownloader
 
     static bool TestIsFileIncluded(string filename)
     {
-      if (!Config.UsingFileList)
+      if (!Config.UsingFileList || Config.VerifyAll)
         return true;
 
       filename = filename.Replace('\\', '/');
@@ -374,7 +376,7 @@ namespace DepotDownloader
       return depotChild["name"].AsString();
     }
 
-    public static bool InitializeSteam3(string username, string password, CoreDelegates core)
+    public static async Task<bool> InitializeSteam3(string username, string password, CoreDelegates core)
     {
       string loginKey = null;
 
@@ -402,6 +404,12 @@ namespace DepotDownloader
       if (!steam3Credentials.IsValid)
       {
         Console.WriteLine("Unable to get steam3 credentials.");
+        if (!steam3Credentials.WaitingForAdditionalAuth)
+        {
+          string[] creds = await core.ui.RequestCredentials(true);
+          _logonDetails.Username = creds[0];
+          _logonDetails.Password = creds[1];
+        }
         return false;
       }
 
@@ -426,7 +434,6 @@ namespace DepotDownloader
     public static async Task DownloadPubfileAsync(uint appId, ulong publishedFileId)
     {
       var details = steam3.GetPublishedFileDetails(appId, publishedFileId);
-
       if (!string.IsNullOrEmpty(details?.file_url))
       {
         await DownloadWebFile(appId, details.filename, details.file_url);
@@ -537,12 +544,10 @@ namespace DepotDownloader
           throw new ContentDownloaderAccountException(appId, contentName);
         }
       }
-;
       var hasSpecificDepots = depotManifestIds.Count > 0;
       var depotIdsFound = new List<uint>();
       var depotIdsExpected = depotManifestIds.Select(x => x.Item1).ToList();
       var depots = GetSteam3AppSection(appId, EAppInfoSection.Depots);
-
       if (isUgc)
       {
         var workshopDepot = depots["workshopdepot"].AsUnsignedInteger();
@@ -557,7 +562,6 @@ namespace DepotDownloader
       else
       {
         Console.WriteLine("Using app branch: '{0}'.", branch);
-
         if (depots != null)
         {
           foreach (var depotSection in depots.Children)
@@ -616,17 +620,17 @@ namespace DepotDownloader
               depotManifestIds.Add((id, INVALID_MANIFEST_ID));
           }
         }
+      }
 
-        if (depotManifestIds.Count == 0 && !hasSpecificDepots)
-        {
-          throw new ContentDownloaderException(String.Format("Couldn't find any depots to download for app {0}", appId));
-        }
+      if (depotManifestIds.Count == 0 && !hasSpecificDepots)
+      {
+        throw new ContentDownloaderException(String.Format("Couldn't find any depots to download for app {0}", appId));
+      }
 
-        if (depotIdsFound.Count < depotIdsExpected.Count)
-        {
-          var remainingDepotIds = depotIdsExpected.Except(depotIdsFound);
-          throw new ContentDownloaderException(String.Format("Depot {0} not listed for app {1}", string.Join(", ", remainingDepotIds), appId));
-        }
+      if (depotIdsFound.Count < depotIdsExpected.Count)
+      {
+        var remainingDepotIds = depotIdsExpected.Except(depotIdsFound);
+        throw new ContentDownloaderException(String.Format("Depot {0} not listed for app {1}", string.Join(", ", remainingDepotIds), appId));
       }
 
       var infos = new List<DepotDownloadInfo>();
@@ -642,7 +646,7 @@ namespace DepotDownloader
 
       try
       {
-        await DownloadSteam3Async(appId, infos, core).ConfigureAwait(false);
+        await DownloadSteam3Async(appId, infos, core, isUgc).ConfigureAwait(false);
       }
       catch (OperationCanceledException)
       {
@@ -731,6 +735,7 @@ namespace DepotDownloader
       public ProtoManifest manifest;
       public ProtoManifest previousManifest;
       public List<ProtoManifest.FileData> filteredFiles;
+      public List<ProtoManifest.FileData> mismatchedFiles;
       public HashSet<string> allFileNames;
     }
 
@@ -755,7 +760,7 @@ namespace DepotDownloader
       public ulong DepotBytesUncompressed;
     }
 
-    private static async Task DownloadSteam3Async(uint appId, List<DepotDownloadInfo> depots, CoreDelegates core)
+    private static async Task DownloadSteam3Async(uint appId, List<DepotDownloadInfo> depots, CoreDelegates core, bool isUGC = false)
     {
       var cts = new CancellationTokenSource();
       cdnPool.ExhaustedToken = cts;
@@ -763,16 +768,27 @@ namespace DepotDownloader
       var downloadCounter = new GlobalDownloadCounter();
       var depotsToDownload = new List<DepotFilesData>(depots.Count);
       var allFileNamesAllDepots = new HashSet<String>();
-
+      var allMismatches = new List<FileData>();
+      if (isUGC)
+      {
+        Config.VerifyAll = true;
+      } else
+      {
+        if (_logonDetails.Password != null)
+        {
+          await core.ui.IsVerifyingFiles();
+        }
+      }
       // First, fetch all the manifests for each depot (including previous manifests) and perform the initial setup
       foreach (var depot in depots)
       {
-        var depotFileData = await ProcessDepotManifestAndFiles(cts, appId, depot, core);
+        var depotFileData = await ProcessDepotManifestAndFiles(cts, appId, depot, core, isUGC);
 
         if (depotFileData != null)
         {
           depotsToDownload.Add(depotFileData);
           allFileNamesAllDepots.UnionWith(depotFileData.allFileNames);
+          allMismatches.AddRange(depotFileData.mismatchedFiles);
         }
 
         cts.Token.ThrowIfCancellationRequested();
@@ -783,16 +799,26 @@ namespace DepotDownloader
       if (!string.IsNullOrWhiteSpace(Config.InstallDirectory) && depotsToDownload.Count > 0)
       {
         var claimedFileNames = new HashSet<String>();
-
+        string[] reval = new string[] { };
+        if (allMismatches.Count > 0 && !isUGC)
+        {
+          string[] fileNames = allMismatches.Select(file => file.FileName).ToArray();
+          reval = await core.ui.ReportMismatch(fileNames);
+        }
         for (var i = depotsToDownload.Count - 1; i >= 0; i--)
         {
           // For each depot, remove all files from the list that have been claimed by a later depot
-          depotsToDownload[i].filteredFiles.RemoveAll(file => claimedFileNames.Contains(file.FileName));
+          depotsToDownload[i].filteredFiles.RemoveAll(file =>
+            file?.FileName == null || claimedFileNames.Contains(file.FileName) || (!isUGC && !reval.Contains(file.FileName)));
 
           claimedFileNames.UnionWith(depotsToDownload[i].allFileNames);
         }
-      }
 
+        if (reval.Length > 0 || isUGC)
+        {
+          Config.DownloadManifestOnly = false;
+        }
+      }
 
       foreach (var depotFileData in depotsToDownload)
       {
@@ -804,7 +830,7 @@ namespace DepotDownloader
     }
 
     private static async Task<DepotFilesData> ProcessDepotManifestAndFiles(CancellationTokenSource cts,
-        uint appId, DepotDownloadInfo depot, CoreDelegates core)
+        uint appId, DepotDownloadInfo depot, CoreDelegates core, bool isUGC = false)
     {
       var depotCounter = new DepotDownloadCounter();
 
@@ -993,38 +1019,20 @@ namespace DepotDownloader
       }
 
       newProtoManifest.Files.Sort((x, y) => string.Compare(x.FileName, y.FileName, StringComparison.Ordinal));
-      string gameExec = await core.context.GetGameExecutable();
-      bool isCorrectDepot = newProtoManifest.Files.Find(file => file.FileName == Path.GetFileName(gameExec)) != null;
-      if (!isCorrectDepot)
-      {
-        return null;
-      }
       Console.WriteLine("Manifest {0} ({1})", depot.manifestId, newProtoManifest.CreationTime);
       List<FileData> mismatched = new List<FileData>();
-      bool reval = false;
-      if (Config.DownloadManifestOnly)
+      if (!isUGC)
       {
         mismatched = VerifyFileIntegrity(Config.FilesToDownload.ToArray(), newProtoManifest.Files);
-        if (mismatched.Count > 0)
-        {
-          DumpManifestToTextFile(depot, newProtoManifest);
-          string[] fileNames = mismatched.Select(file => file.FileName).ToArray();
-          reval = await core.ui.ReportMismatch(fileNames);
-          if (reval)
-          {
-            Config.DownloadManifestOnly = false;
-          }
-          else
-          {
-            return null;
-          }
-        }
+      }
+      string[] reval = new string[] { };
+      if (Config.DownloadManifestOnly)
+      {
+        DumpManifestToTextFile(depot, newProtoManifest);
       }
 
       var stagingDir = Path.Combine(depot.installDir, STAGING_DIR);
-      var filesAfterExclusions = reval
-        ? mismatched
-        : newProtoManifest.Files.AsParallel().Where(f => TestIsFileIncluded(f.FileName)).ToList();
+      var filesAfterExclusions = newProtoManifest.Files.AsParallel().Where(f => TestIsFileIncluded(f.FileName)).ToList();
       var allFileNames = new HashSet<string>(filesAfterExclusions.Count);
 
       // Pre-process
@@ -1057,6 +1065,7 @@ namespace DepotDownloader
         stagingDir = stagingDir,
         manifest = newProtoManifest,
         previousManifest = oldProtoManifest,
+        mismatchedFiles = mismatched,
         filteredFiles = filesAfterExclusions,
         allFileNames = allFileNames
       };
@@ -1078,9 +1087,21 @@ namespace DepotDownloader
     {
       FileData[] data = filePaths.Select(file => new FileData(file)).ToArray();
       var implementations = TypeLoaderExtensions.GetImplementingTypes(typeof(ICryptoTransform));
-      
+      filesData = filesData.Where(f => Path.HasExtension(Path.GetFileName(f.FileName))).ToList();
       return filesData.FindAll((file) =>
       {
+        if (data.Where(d => d.FileName == file.FileName).FirstOrDefault() == null)
+        {
+          // Make sure the file is truly missing (and that it's indeed a file)
+          string expectedPath = Path.Combine(Config.InstallDirectory, file.FileName);
+          bool isDirectory = false;
+          bool fileExists = File.Exists(expectedPath) || Directory.Exists(expectedPath);
+          if (fileExists)
+          {
+            isDirectory = File.GetAttributes(expectedPath).HasFlag(FileAttributes.Directory);
+          }
+          return !fileExists && !isDirectory;
+        }
         FileData mismatch = data.Where(gameFile => (gameFile.FileName == file.FileName)
                                                 && (!gameFile.FileHash.StructuralEquals(file.FileHash))).FirstOrDefault();
         return mismatch != null;

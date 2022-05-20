@@ -58,7 +58,10 @@ namespace Common
     private List<ulong> m_ManifestIdList;
     public List<ulong> ManifestIdList { get => m_ManifestIdList; }
 
-    public ParametersImpl(JObject data)
+    private OpType m_opType;
+    public OpType OperationType { get => m_opType; set => m_opType = value; }
+
+    public ParametersImpl(JObject data, OpType opType)
     {
       m_userName = (string?)data[nameof(Username)];
       m_password = (string?)data[nameof(Password)];
@@ -76,6 +79,8 @@ namespace Common
       m_ugcId = (ulong)Util.ValueNormalize<ulong>(data[nameof(UgcId)], ulong.MaxValue);
       m_betaBranchPassword = (string?)data[nameof(BetaBranchPassword)];
       m_branch = (string?)data[nameof(Branch)];
+
+      m_opType = opType;
 
       // TODO: populate these.
       m_depotIds = null;

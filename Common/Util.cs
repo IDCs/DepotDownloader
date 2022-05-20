@@ -22,9 +22,9 @@ namespace Common
   }
   public static class Util
   {
-    public static object ValueNormalize(object input)
+    public static object? ValueNormalize(object input)
     {
-      if (input == null)
+      if (input == null || input == "null")
       {
         return null;
       }
@@ -57,6 +57,10 @@ namespace Common
         // expecting and I found no good way to do the cast implicitly as necessary.
         // my C#-fu is just to weak
         return (int)(long)input;
+      }
+      else if (input.GetType() == typeof(ulong))
+      {
+        return Convert.ToUInt64(input);
       }
       else if (input.GetType() == typeof(bool))
       {
@@ -102,7 +106,12 @@ namespace Common
         // expecting and I found no good way to do the cast implicitly as necessary.
         // my C#-fu is just to weak
         return (int)(long)input;
-      } else if (input.GetType() == typeof(bool))
+      }
+      else if (typeof(T) == typeof(ulong))
+      {
+        return Convert.ToUInt64(input);
+      }
+      else if (input.GetType() == typeof(bool))
       {
         return (bool)input;
       }
