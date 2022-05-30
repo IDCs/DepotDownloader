@@ -376,7 +376,7 @@ namespace DepotDownloader
       return depotChild["name"].AsString();
     }
 
-    public static async Task<bool> InitializeSteam3(string username, string password, CoreDelegates core)
+    public static async Task<bool> InitializeSteam3(string username, string password, CoreDelegates core, Steam3Session session = null)
     {
       string loginKey = null;
 
@@ -396,8 +396,21 @@ namespace DepotDownloader
           LoginID = Config.LoginID ?? 0x534B32, // "SK2"
         };
       }
-      
-      steam3 = new Steam3Session(core);
+
+      if (session != null)
+      {
+        steam3 = session;
+        steam3Credentials = steam3.WaitForCredentials();
+        if (steam3Credentials.WaitingForAdditionalAuth) {
+          await Task.Delay(5000);
+          return await InitializeSteam3(username, password, core, steam3);
+        } else {
+          session.Connect();
+        }
+      } else
+      {
+        steam3 = new Steam3Session(core);
+      }
 
       steam3Credentials = steam3.WaitForCredentials();
 
@@ -410,7 +423,7 @@ namespace DepotDownloader
           _logonDetails.Username = creds[0];
           _logonDetails.Password = creds[1];
         }
-        return false;
+        return await InitializeSteam3(username, password, core, steam3);
       }
 
       return true;

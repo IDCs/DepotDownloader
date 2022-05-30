@@ -418,7 +418,7 @@ namespace DepotDownloader
       bDidReceiveLoginKey = false;
     }
 
-    void Connect()
+    public void Connect()
     {
       bAborted = false;
       bConnected = false;
