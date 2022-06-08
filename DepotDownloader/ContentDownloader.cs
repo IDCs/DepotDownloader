@@ -49,6 +49,7 @@ namespace DepotDownloader
 
     public static Steam3Session S3Session { get { return steam3; } }
     private static Steam3Session steam3;
+    public static Steam3Session.Credentials CredentialsStatus => steam3Credentials;
     private static Steam3Session.Credentials steam3Credentials;
     private static CDNClientPool cdnPool;
 

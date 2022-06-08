@@ -293,7 +293,7 @@ namespace DepotDownloader
             ex is ContentDownloaderAccountException)
         {
           bool retry = ContentDownloader._logonDetails?.Password != null;
-          if (retry && ex.Message.IndexOf("is not available from this account.") != -1)
+          if (retry && ContentDownloader.CredentialsStatus.IsValid)
           {
             core.ui.ReportError("Failed to verify files", "Your Steam account does not own a license for this game", ex.ToString());
             throw ex;
