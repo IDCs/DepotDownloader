@@ -502,7 +502,7 @@ namespace DepotDownloader
       }
       else
       {
-        Console.Write("Logging '{0}' AuthCode '{1}' into Steam3...", ContentDownloader._logonDetails.Username, ContentDownloader._logonDetails.AuthCode);
+        Console.Write("Logging '{0}' into Steam3...", ContentDownloader._logonDetails.Username);
         steamUser.LogOn(ContentDownloader._logonDetails);
       }
     }
