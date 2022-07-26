@@ -41,8 +41,11 @@ namespace DepotDownloader
         FilePath = fPath;
         FileName = relPath.Substring(1);
         Flags = 0;
-        byte[] hash = File.ReadAllBytes(filePath);
-        FileHash = Util.SHAHash(hash);
+        using (FileStream filestream = File.Open(filePath, FileMode.Open))
+        {
+          filestream.Position = 0;
+          FileHash = Util.SHAHash(filestream);
+        }
       }
 
       public FileData(DepotManifest.FileData sourceData) : this()

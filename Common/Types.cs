@@ -24,7 +24,7 @@
     public ulong UgcId { get; }
     public string Branch { get; }
     public string BetaBranchPassword { get; }
-    public List<uint> DepotIdList { get; }
-    public List<ulong> ManifestIdList { get; }
+    public uint[] DepotIdList { get; }
+    public ulong[] ManifestIdList { get; }
   }
 }

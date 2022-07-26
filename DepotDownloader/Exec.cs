@@ -232,8 +232,8 @@ namespace DepotDownloader
             // nop
           }
         }
-        var depotIdList = parameters?.DepotIdList ?? installeddepotIds;
-        var manifestIdList = parameters?.ManifestIdList ?? new List<ulong>();
+        var depotIdList = parameters?.DepotIdList?.ToList() ?? installeddepotIds;
+        var manifestIdList = parameters?.ManifestIdList?.ToList() ?? new List<ulong>();
         if (manifestIdList.Count > 0)
         {
           if (depotIdList.Count != manifestIdList.Count)

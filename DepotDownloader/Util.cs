@@ -97,6 +97,16 @@ namespace DepotDownloader
       return (hashOfInput.SequenceEqual(hash));
     }
 
+    public static byte[] SHAHash(FileStream stream)
+    {
+      using (var sha = SHA1.Create())
+      {
+        var output = sha.ComputeHash(stream);
+
+        return output;
+      }
+    }
+
     public static byte[] SHAHash(byte[] input)
     {
       using (var sha = SHA1.Create())

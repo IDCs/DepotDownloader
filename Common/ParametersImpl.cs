@@ -52,11 +52,11 @@ namespace Common
     private string m_betaBranchPassword;
     public string BetaBranchPassword { get => m_betaBranchPassword; }
 
-    private List<uint> m_depotIds;
-    public List<uint> DepotIdList { get => m_depotIds; }
+    private uint[] m_depotIds;
+    public uint[] DepotIdList { get => m_depotIds; }
 
-    private List<ulong> m_ManifestIdList;
-    public List<ulong> ManifestIdList { get => m_ManifestIdList; }
+    private ulong[] m_ManifestIdList;
+    public ulong[] ManifestIdList { get => m_ManifestIdList; }
 
     private OpType m_opType;
     public OpType OperationType { get => m_opType; set => m_opType = value; }
@@ -79,12 +79,14 @@ namespace Common
       m_ugcId = (ulong)Util.ValueNormalize<ulong>(data[nameof(UgcId)], ulong.MaxValue);
       m_betaBranchPassword = (string?)data[nameof(BetaBranchPassword)];
       m_branch = (string?)data[nameof(Branch)];
-
+      m_depotIds = (data[nameof(DepotIdList)] != null)
+        ? data[nameof(DepotIdList)].ToList().Select(input => Convert.ToUInt32(input)).ToArray()
+        : null;
       m_opType = opType;
 
-      // TODO: populate these.
-      m_depotIds = null;
-      m_ManifestIdList = null;
+      m_ManifestIdList = (data[nameof(ManifestIdList)] != null)
+        ? data[nameof(ManifestIdList)].ToList().Select(input => Convert.ToUInt64(input)).ToArray()
+        : null; ;
     }
   }
 }
