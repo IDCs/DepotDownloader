@@ -115,9 +115,8 @@ namespace DepotDownloader
       if (pubFile != ContentDownloader.INVALID_MANIFEST_ID)
       {
         string[] creds = new string[] { username, password };
-        if (ContentDownloader._logonDetails?.Password == null)
+        if (ContentDownloader._logonDetails != null && ContentDownloader._logonDetails.Password == null)
         {
-          creds = await core.ui.RequestCredentials();
           ContentDownloader._logonDetails.Username = creds[0];
           ContentDownloader._logonDetails.Password = creds[1];
         }
@@ -166,7 +165,7 @@ namespace DepotDownloader
       else if (ugcId != ContentDownloader.INVALID_MANIFEST_ID)
       {
         string[] creds = new string[] { username, password };
-        if (ContentDownloader._logonDetails?.Password == null)
+        if (ContentDownloader._logonDetails != null && ContentDownloader._logonDetails.Password == null)
         {
           creds = await core.ui.RequestCredentials();
           ContentDownloader._logonDetails.Username = creds[0];
